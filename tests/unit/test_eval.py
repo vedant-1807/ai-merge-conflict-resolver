@@ -64,6 +64,14 @@ async def test_mine_finds_conflicting_merge(tmp_path: Path) -> None:
     assert s.hunks >= 3
 
 
+def test_mutants_skip_tests_and_docstrings() -> None:
+    src = 'def f(a):\n    """Return True when a == 1."""\n    msg = """x\n    a == b\n    """\n    return a == 1\n'
+    muts = list(mutants_for("pkg/mod.py", src))
+    assert {m.line for m in muts} == {6}
+    assert list(mutants_for("tests/test_mod.py", "def test():\n    assert 1 == 1\n")) == []
+    assert list(mutants_for("pkg/conftest.py", "X = 1 == 1\n")) == []
+
+
 def test_mutants_are_behavioural_and_parse() -> None:
     src = "def f(a, b):\n    if a == b and not a:\n        return a + 1\n    return True\n"
     ops = {m.operator for m in mutants_for("f.py", src)}

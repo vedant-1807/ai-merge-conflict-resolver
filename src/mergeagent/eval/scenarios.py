@@ -42,7 +42,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 def mirror(url: str, cache_dir: Path) -> Path:
     """Local bare mirror of a remote repo (re-used across mine/run/mutate)."""
     if Path(url).exists():
-        return Path(url)
+        return Path(url).resolve()
     cache_dir.mkdir(parents=True, exist_ok=True)
     dest = cache_dir / (hashlib.sha1(url.encode(), usedforsecurity=False).hexdigest()[:12] + ".git")
     if dest.exists():
@@ -52,4 +52,4 @@ def mirror(url: str, cache_dir: Path) -> Path:
         )
     else:
         subprocess.run(["git", "clone", "--quiet", "--bare", url, str(dest)], check=True)
-    return dest
+    return dest.resolve()

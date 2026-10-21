@@ -62,5 +62,6 @@ async def mine_dataset(dataset: Path, out: Path, cache_dir: Path) -> int:
         )  # fmt: skip
         for s in scenarios:
             append_jsonl(out, asdict(s))
+        print(f"{r['name']}: {len(scenarios)} conflicting merges", flush=True)
         total += len(scenarios)
     return total

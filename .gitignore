@@ -14,3 +14,4 @@ htmlcov/
 *.pem
 eval-results/
 .DS_Store
+.eval-cache/

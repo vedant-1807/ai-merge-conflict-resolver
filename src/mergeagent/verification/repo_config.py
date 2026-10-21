@@ -44,25 +44,53 @@ class RepoConfig(BaseModel):
         return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
 
 
+# Test-dependency conventions, most precise first: a uv lockfile with a dependency group pins
+# exact versions; requirements/tests.txt is the pip-tools era; extras are the oldest style.
+_LOCK_GROUPS = ("tests", "test", "testing", "dev")
+_TEST_REQUIREMENTS = (
+    "requirements/tests.txt", "requirements/test.txt", "requirements-test.txt",
+    "requirements/tests-dev.txt", "requirements/dev.txt", "requirements-dev.txt",
+)  # fmt: skip
+
+
+def _python_setup(names: set[str]) -> list[str]:
+    steps = []
+    if names & {"pyproject.toml", "setup.py", "setup.cfg"}:
+        steps.append("pip install -q -e .")
+    if "uv.lock" in names:
+        groups = " || ".join(
+            f"(uv export --frozen --no-hashes --no-emit-project --group {g} -o /tmp/req-{g}.txt"
+            f" && pip install -q -r /tmp/req-{g}.txt)"
+            for g in _LOCK_GROUPS
+        )
+        steps.append(f"{groups} || true")
+    req = next((r for r in _TEST_REQUIREMENTS if r in names), None)
+    if req:
+        steps.append(f"pip install -q -r {req}")
+    elif "requirements.txt" in names:
+        steps.append("pip install -q -r requirements.txt")
+    if names & {"pyproject.toml", "setup.py", "setup.cfg"}:
+        steps.append(
+            "pip install -q -e '.[tests]' 2>/dev/null || pip install -q -e '.[test]' 2>/dev/null"
+            " || pip install -q -e '.[testing]' 2>/dev/null || true"
+        )
+    steps.append("python -c 'import pytest' 2>/dev/null || pip install -q pytest")
+    return steps
+
+
 def detect(files: Iterable[str]) -> RepoConfig:
     names = set(files)
     if names & {"pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "tox.ini"} or any(
         n.endswith(".py") for n in names
     ):
-        setup = []
-        if names & {"pyproject.toml", "setup.py"}:
-            setup.append("pip install -q -e '.[test]' 2>/dev/null || pip install -q -e . || true")
-        for req in ("requirements.txt", "requirements-dev.txt", "requirements/dev.txt",
-                    "requirements/tests.txt", "requirements/test.txt"):  # fmt: skip
-            if req in names:
-                setup.append(f"pip install -q -r {req}")
-        setup.append("pip install -q pytest 2>/dev/null || true")
+        setup = _python_setup(names)
         typecheck = "mypy ." if names & {"mypy.ini", ".mypy.ini"} else None
         return RepoConfig(
             setup=setup,
             build="python -m compileall -q -x '(^|/)(\\.|venv|node_modules)' .",
             typecheck=typecheck,
-            test=f"python -m pytest -q -p no:cacheprovider --junitxml={JUNIT}",
+            # One broken test module must not hide the results of every other module.
+            test=f"python -m pytest -q -p no:cacheprovider --continue-on-collection-errors --junitxml={JUNIT}",
             test_report=JUNIT,
             detected="python",
         )

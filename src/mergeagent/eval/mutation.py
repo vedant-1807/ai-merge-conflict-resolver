@@ -9,6 +9,7 @@ trivially; we only score behavioural regressions).
 from __future__ import annotations
 
 import ast
+import asyncio
 import random
 import re
 import tempfile
@@ -53,11 +54,42 @@ class Mutant:
     text: str  # full mutated file
 
 
+def is_test_path(path: str) -> bool:
+    parts = path.split("/")
+    name = parts[-1]
+    return (
+        any(p in {"tests", "test", "testing"} for p in parts[:-1])
+        or name.startswith("test_")
+        or name.endswith("_test.py")
+        or name == "conftest.py"
+    )
+
+
+def _string_lines(tree: ast.AST) -> set[int]:
+    """Lines inside docstrings or other multi-line string literals."""
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            end = node.end_lineno or node.lineno
+            if end > node.lineno:
+                lines.update(range(node.lineno, end + 1))
+        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            lines.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+    return lines
+
+
 def mutants_for(path: str, text: str) -> Iterator[Mutant]:
+    """Behavioural mutants of production code only: tests and docstrings are never mutated."""
+    if is_test_path(path):
+        return
+    try:
+        skip = _string_lines(ast.parse(text))
+    except SyntaxError:
+        return
     lines = text.splitlines(keepends=True)
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if not stripped or stripped.startswith(("#", '"""', "'''", "import ", "from ")):
+        if i + 1 in skip or not stripped or stripped.startswith(("#", "import ", "from ", "@")):
             continue
         for name, pattern, repl in OPERATORS:
             if pattern.search(line):
@@ -72,46 +104,71 @@ def mutants_for(path: str, text: str) -> Iterator[Mutant]:
                 yield Mutant(path, i + 1, name, line.rstrip(), new_line.rstrip(), new_text)
 
 
-async def run_mutations(
-    settings: Settings, scenarios_path: Path, out: Path, cache_dir: Path, per_scenario: int
+async def _scenario_mutants(
+    s: Scenario, pipeline: VerificationPipeline, out: Path, cache_dir: Path, per_scenario: int
 ) -> int:
-    rng = random.Random(1234)  # noqa: S311 - reproducible sampling, not crypto
+    py_files = [f for f in s.files if f.endswith(".py")]
+    if not py_files:
+        return 0
+    rng = random.Random(f"{s.merge_sha}:1234")  # noqa: S311 - reproducible sampling, not crypto
+    ws = await GitWorkspace.clone(str(mirror(s.url, cache_dir)), Path(tempfile.mkdtemp()) / "ws",
+                                  refs=[s.ours, s.theirs, s.merge_sha])  # fmt: skip
     count = 0
+    try:
+        cfg = await load_repo_config(ws, s.theirs)
+        pool = []
+        for f in py_files:
+            try:
+                pool += list(mutants_for(f, await ws.read_file(s.merge_sha, f)))
+            except FileNotFoundError:
+                continue
+        await ws.run("checkout", "--quiet", "--force", "--detach", s.merge_sha)
+        for m in rng.sample(pool, min(per_scenario, len(pool))):
+            await ws.write_resolved(m.path, m.text)
+            tree = await ws.write_tree()
+            rep = await pipeline.verify(
+                s.repo, cfg,
+                Snapshot("base", s.theirs, partial(ws.archive, s.theirs)),
+                Snapshot("head", s.ours, partial(ws.archive, s.ours)),
+                Snapshot("candidate", tree, partial(ws.archive, tree)),
+            )  # fmt: skip
+            await ws.run("checkout", "--quiet", "--force", s.merge_sha, "--", m.path)
+            append_jsonl(out, {
+                "scenario": s.id, "repo": s.repo, "path": m.path, "line": m.line, "operator": m.operator,
+                "original": m.original, "mutated": m.mutated, "verdict": rep.verdict.value,
+                "detected": rep.verdict is Verdict.FAIL, "reasons": rep.reasons,
+            })  # fmt: skip
+            count += 1
+    finally:
+        ws.cleanup()
+    return count
+
+
+async def run_mutations(
+    settings: Settings,
+    scenarios_path: Path,
+    out: Path,
+    cache_dir: Path,
+    per_scenario: int,
+    concurrency: int = 1,
+) -> int:
     pipeline = VerificationPipeline(
         build_sandbox(settings), MemoryBaselineCache(), settings.sandbox.image
     )
-    for row in read_jsonl(scenarios_path):
-        s = Scenario(**row)
-        py_files = [f for f in s.files if f.endswith(".py")]
-        if not py_files:
-            continue
-        ws = await GitWorkspace.clone(str(mirror(s.url, cache_dir)), Path(tempfile.mkdtemp()) / "ws",
-                                      refs=[s.ours, s.theirs, s.merge_sha])  # fmt: skip
-        try:
-            cfg = await load_repo_config(ws, s.theirs)
-            pool = []
-            for f in py_files:
-                try:
-                    pool += list(mutants_for(f, await ws.read_file(s.merge_sha, f)))
-                except FileNotFoundError:
-                    continue
-            await ws.run("checkout", "--quiet", "--force", "--detach", s.merge_sha)
-            for m in rng.sample(pool, min(per_scenario, len(pool))):
-                await ws.write_resolved(m.path, m.text)
-                tree = await ws.write_tree()
-                rep = await pipeline.verify(
-                    s.repo, cfg,
-                    Snapshot("base", s.theirs, partial(ws.archive, s.theirs)),
-                    Snapshot("head", s.ours, partial(ws.archive, s.ours)),
-                    Snapshot("candidate", tree, partial(ws.archive, tree)),
-                )  # fmt: skip
-                await ws.run("checkout", "--quiet", "--force", s.merge_sha, "--", m.path)
-                append_jsonl(out, {
-                    "scenario": s.id, "repo": s.repo, "path": m.path, "line": m.line, "operator": m.operator,
-                    "original": m.original, "mutated": m.mutated, "verdict": rep.verdict.value,
-                    "detected": rep.verdict is Verdict.FAIL, "reasons": rep.reasons,
-                })  # fmt: skip
-                count += 1
-        finally:
-            ws.cleanup()
-    return count
+    done = {r["scenario"] for r in read_jsonl(out)}  # resumable
+    scenarios = [Scenario(**r) for r in read_jsonl(scenarios_path)]
+    sem = asyncio.Semaphore(concurrency)
+
+    async def one(s: Scenario) -> int:
+        if s.id in done:
+            return 0
+        async with sem:
+            try:
+                return await _scenario_mutants(s, pipeline, out, cache_dir, per_scenario)
+            except Exception as exc:  # one broken scenario must not abort the study
+                append_jsonl(
+                    out.with_suffix(".errors.jsonl"), {"scenario": s.id, "error": str(exc)[:500]}
+                )
+                return 0
+
+    return sum(await asyncio.gather(*(one(s) for s in scenarios)))

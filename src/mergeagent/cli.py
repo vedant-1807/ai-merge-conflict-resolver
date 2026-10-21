@@ -161,13 +161,14 @@ def eval_mutate(
     out: Annotated[Path, typer.Option()],
     per_scenario: Annotated[int, typer.Option()] = 5,
     cache_dir: Annotated[Path, typer.Option()] = Path(".eval-cache"),
+    concurrency: Annotated[int, typer.Option(help="Scenarios verified in parallel")] = 1,
 ) -> None:
     """Inject behavioural regressions into known-good resolutions and measure detection."""
     from mergeagent.eval.mutation import run_mutations
 
     settings = get_settings()
     configure_logging("WARNING", json=False)
-    n = asyncio.run(run_mutations(settings, scenarios, out, cache_dir, per_scenario))
+    n = asyncio.run(run_mutations(settings, scenarios, out, cache_dir, per_scenario, concurrency))
     typer.echo(f"evaluated {n} mutants -> {out}")
 
 

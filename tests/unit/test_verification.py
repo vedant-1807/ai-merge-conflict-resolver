@@ -126,6 +126,16 @@ async def test_pipeline_pass_fail_and_cache(tmp_path: Path) -> None:
     assert report.gates["build"] is False
 
 
+async def test_pipeline_inconclusive_when_suite_broken_everywhere() -> None:
+    # Every snapshot's tests error out (e.g. incompatible test deps): must not count as a pass.
+    pipe = VerificationPipeline(LocalSandbox(), MemoryBaselineCache())
+    broken = {"test_x.py": "import does_not_exist\n\ndef test_a():\n    pass\n"}
+    s = _snap("x", broken)
+    report = await pipe.verify("o/r", CFG, s, s, s)
+    assert report.verdict is Verdict.INCONCLUSIVE
+    assert "no test passes" in report.reasons[0]
+
+
 async def test_pipeline_inconclusive_without_tests() -> None:
     pipe = VerificationPipeline(LocalSandbox(), MemoryBaselineCache())
     s = _snap("x", {"a.py": "x = 1\n"})

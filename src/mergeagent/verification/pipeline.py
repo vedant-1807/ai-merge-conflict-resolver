@@ -257,6 +257,13 @@ def evaluate(parents: list[SnapshotRun], cand: SnapshotRun, cfg: RepoConfig) -> 
     comparison: Comparison | None = None
     cand_results = cand.results()
     parent_results = [r for p in parents if (r := p.results()) is not None]
+    if (
+        cfg.test
+        and parent_results
+        and not any(o is Outcome.PASSED for r in parent_results for o in r.values())
+    ):
+        reasons.append("no test passes on either parent; the suite cannot vouch for the merge")
+        return VerificationReport(Verdict.INCONCLUSIVE, gates, reasons, None, runs)
     if cfg.test:
         if cand_results is not None and parent_results:
             comparison = compare_tests(parent_results, cand_results)

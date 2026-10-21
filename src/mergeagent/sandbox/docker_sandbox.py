@@ -54,7 +54,13 @@ class DockerSandboxSession:
         await self._set_network(network)
         wrapped = ["timeout", "-k", "10", str(timeout_s), "sh", "-c", command]
         started = time.perf_counter()
-        env = {"HOME": "/tmp", "CI": "true", "PYTHONDONTWRITEBYTECODE": "1"}  # noqa: S108 - in-container path
+        env = {
+            "HOME": "/tmp",  # noqa: S108 - in-container path
+            "CI": "true",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            # Snapshots carry no .git, so setuptools-scm cannot derive a version on its own.
+            "SETUPTOOLS_SCM_PRETEND_VERSION": "9999.0.0",
+        }
         code, out = await asyncio.to_thread(
             self._c.exec_run,
             wrapped,
