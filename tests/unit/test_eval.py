@@ -64,6 +64,15 @@ async def test_mine_finds_conflicting_merge(tmp_path: Path) -> None:
     assert s.hunks >= 3
 
 
+def test_mutants_skip_strings_comments_and_non_package_code() -> None:
+    src = 'def f(a):\n    log("x == y and z")  # a == b\n    return a == 1\n'
+    muts = list(mutants_for("pkg/mod.py", src))
+    assert all(m.line == 3 for m in muts)
+    assert any(m.mutated.strip() == "return a != 1" for m in muts)
+    assert list(mutants_for("scripts/gen.py", "x = 1 == 1\n")) == []
+    assert list(mutants_for("setup.py", "x = 1 == 1\n")) == []
+
+
 def test_mutants_skip_tests_and_docstrings() -> None:
     src = 'def f(a):\n    """Return True when a == 1."""\n    msg = """x\n    a == b\n    """\n    return a == 1\n'
     muts = list(mutants_for("pkg/mod.py", src))
@@ -106,6 +115,8 @@ async def test_mutation_study_detects_regressions(tmp_path: Path) -> None:
     rows = read_jsonl(out)
     assert n == len(rows) > 0
     assert any(r["detected"] for r in rows)
+    assert all(r["covered"] is not None for r in rows)  # coverage pass ran
+    assert any(r["covered"] and r["detected"] for r in rows)
     assert all(r["verdict"] in {"pass", "fail", "inconclusive"} for r in rows)
 
 
@@ -117,10 +128,20 @@ def test_report(tmp_path: Path) -> None:
     for i in range(4):
         append_jsonl(tmp_path / "routed.jsonl", row(i < 3, 0.075, "routed"))
         append_jsonl(tmp_path / "fixed.jsonl", row(i < 3, 0.1, "fixed:claude-opus-5-5"))
-    append_jsonl(tmp_path / "mutations.jsonl", {"operator": "negate_eq", "detected": True})
-    append_jsonl(tmp_path / "mutations.jsonl", {"operator": "negate_eq", "detected": False})
+    for covered, detected in [(True, True), (True, False), (False, False)]:
+        append_jsonl(
+            tmp_path / "mutations.jsonl",
+            {
+                "operator": "negate_eq",
+                "repo": "a/b",
+                "covered": covered,
+                "detected": detected,
+                "verdict": "fail" if detected else "pass",
+            },
+        )
     text = write_report(tmp_path, tmp_path / "out.md")
     assert "3 (75.0%)" in text
     assert "Cost per attempt reduction: 25.0%" in text
-    assert "Detected 1/2 (50.0%)" in text
+    assert "Detected 1/2 (50.0%) of regressions injected into code" in text
+    assert "| All valid mutants | 1/3 (33.3%) |" in text
     assert "No results yet" in write_report(tmp_path / "empty", tmp_path / "e.md")

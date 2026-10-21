@@ -71,15 +71,39 @@ def write_report(directory: Path, out: Path) -> str:
         ]  # fmt: skip
 
     if mutations:
-        det = sum(1 for m in mutations if m["detected"])
-        ops = Counter(m["operator"] for m in mutations)
-        det_ops = Counter(m["operator"] for m in mutations if m["detected"])
-        lines += [
-            "## Injected behavioural regressions", "",
-            f"**Detected {det}/{len(mutations)} ({_pct(det, len(mutations))})** before a PR would be opened.", "",
-            "| Operator | Mutants | Detected |", "|---|---|---|",
-            *[f"| {op} | {n} | {_pct(det_ops[op], n)} |" for op, n in ops.most_common()], "",
-        ]  # fmt: skip
+        valid = [m for m in mutations if m.get("verdict") != "inconclusive"]
+        cov = [m for m in valid if m.get("covered") is True]
+        unc = [m for m in valid if m.get("covered") is False]
+        det = sum(1 for m in valid if m["detected"])
+        cov_det = sum(1 for m in cov if m["detected"])
+        lines += ["## Injected behavioural regressions", ""]
+        if cov:
+            lines += [
+                f"**Detected {cov_det}/{len(cov)} ({_pct(cov_det, len(cov))}) of regressions injected into code "
+                "the project's tests execute** before a draft PR would be opened.", "",
+                "| Mutants | Detected |", "|---|---|",
+                f"| In tested code (headline) | {cov_det}/{len(cov)} ({_pct(cov_det, len(cov))}) |",
+                f"| In untested code | {sum(1 for m in unc if m['detected'])}/{len(unc)} ({_pct(sum(1 for m in unc if m['detected']), len(unc))}) |",
+                f"| All valid mutants | {det}/{len(valid)} ({_pct(det, len(valid))}) |",
+                f"| Inconclusive (suite could not run), excluded | {len(mutations) - len(valid)} |", "",
+            ]  # fmt: skip
+        else:
+            lines += [
+                f"**Detected {det}/{len(valid)} ({_pct(det, len(valid))})** before a PR would be opened.",
+                "",
+            ]
+        scored = cov or valid
+        by_repo: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for m in scored:
+            by_repo[m.get("repo", "?")].append(m)
+        lines += ["| Repository | Mutants | Detected |", "|---|---|---|"]
+        for repo, ms in sorted(by_repo.items()):
+            d = sum(1 for m in ms if m["detected"])
+            lines.append(f"| {repo} | {len(ms)} | {_pct(d, len(ms))} |")
+        ops = Counter(m["operator"] for m in scored)
+        det_ops = Counter(m["operator"] for m in scored if m["detected"])
+        lines += ["", "| Operator | Mutants | Detected |", "|---|---|---|",
+                  *[f"| {op} | {n} | {_pct(det_ops[op], n)} |" for op, n in ops.most_common()], ""]  # fmt: skip
 
     if len(lines) == 4:
         lines.append("_No results yet. Run `make eval-mine eval-run eval-cost eval-mutate` first._")
