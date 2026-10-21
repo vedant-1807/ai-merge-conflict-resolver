@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="MergeAgent: AI merge conflict resolution, verified">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b2e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#2ea0ff"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#ffffff" stroke-opacity="0.035"/>
+    </pattern>
+  </defs>
+  <rect width="1280" height="320" rx="16" fill="url(#bg)"/>
+  <rect width="1280" height="320" rx="16" fill="url(#grid)"/>
+
+  <!-- branch graph: two branches converge into a verified merge -->
+  <g transform="translate(860 60)" fill="none" stroke-linecap="round" stroke-width="5">
+    <path d="M40 30 C 40 110, 200 110, 200 170" stroke="#7c5cff"/>
+    <path d="M360 30 C 360 110, 200 110, 200 170" stroke="#2ea0ff"/>
+    <path d="M200 170 V 215" stroke="url(#accent)"/>
+    <circle cx="40" cy="30" r="12" fill="#0d1117" stroke="#7c5cff"/>
+    <circle cx="360" cy="30" r="12" fill="#0d1117" stroke="#2ea0ff"/>
+    <circle cx="120" cy="95" r="8" fill="#0d1117" stroke="#7c5cff"/>
+    <circle cx="280" cy="95" r="8" fill="#0d1117" stroke="#2ea0ff"/>
+    <circle cx="200" cy="170" r="20" fill="#0d1117" stroke="url(#accent)"/>
+    <path d="M190 170 l7 8 l14 -16" stroke="#3fb950" stroke-width="5"/>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="15" fill="#8b949e">
+    <text x="872" y="56">feature</text>
+    <text x="1196" y="56" text-anchor="end">main</text>
+    <text x="1060" y="300" text-anchor="middle">tests green on both parents</text>
+  </g>
+
+  <g font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+    <text x="72" y="128" font-size="64" font-weight="700" fill="#f0f6fc">MergeAgent</text>
+    <rect x="72" y="146" width="132" height="6" rx="3" fill="url(#accent)"/>
+    <text x="72" y="198" font-size="26" fill="#c9d1d9">AI merge-conflict resolution that proves its fix</text>
+    <text x="72" y="236" font-size="18" fill="#8b949e">LangGraph agents · scoped MCP tools · Docker-sandboxed regression checks</text>
+  </g>
+</svg>
