@@ -28,7 +28,7 @@
 
 ## ✨ Highlights
 
-| | |
+| Capability | What it does |
 |---|---|
 | 🧠 **Multi-agent pipeline** | LangGraph state machine: deterministic **triage** → **analyzer** (intent of each side) → **resolver** → **verifier**, with retry-and-escalate on failure |
 | 🔐 **Least-privilege MCP tools** | Four MCP servers (git, tests, issues, RAG). Each agent gets an allowlist: the analyzer can't write, and the verifier can't edit what it judges |
@@ -40,25 +40,28 @@
 ## 🔄 How it works
 
 ```mermaid
-flowchart LR
-    GH([GitHub]) -- "webhook<br/>(HMAC-verified)" --> API[FastAPI]
-    API -- enqueue --> Q[(Redis · arq)]
-    Q --> W[Worker]
-    W --> G{{LangGraph<br/>pipeline}}
-    G <--> MCP[["MCP servers<br/>git · tests · issues · rag"]]
+flowchart TB
+    GH(["GitHub pull request"]) -->|"webhook · HMAC verified"| API["FastAPI"]
+    API -->|enqueue| Q[("Redis · arq")]
+    Q --> W["Worker"]
+    W --> G{{"LangGraph pipeline"}}
+    subgraph tools ["Agent-scoped MCP servers"]
+        direction LR
+        T1["git"] ~~~ T2["tests"] ~~~ T3["issues"] ~~~ T4["rag"]
+    end
+    G <--> tools
     G <--> LLM["LLM gateway<br/>routing · redaction · budget"]
-    LLM <--> C((Claude))
-    MCP <--> SB[["Docker sandbox<br/>no network · non-root"]]
-    MCP <--> PG[(Postgres + pgvector)]
-    G -- "verified" --> PR([Draft PR + check run])
-    G -- "not verified" --> CM([Comment with analysis])
+    LLM <--> C(("Claude"))
+    T2 <--> SB[["Docker sandbox<br/>no network · non-root"]]
+    T4 <--> PG[("Postgres + pgvector")]
+    G -->|verified| PR(["Draft PR + check run"])
+    G -->|not verified| CM(["Comment with analysis"])
 ```
 
 ### The agent graph
 
 ```mermaid
 stateDiagram-v2
-    direction LR
     [*] --> triage
     triage --> analyze: semantic hunks
     triage --> verify: all hunks trivial
