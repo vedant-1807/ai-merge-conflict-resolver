@@ -1,0 +1,18 @@
+# GitHub App manifest. Register via https://github.com/settings/apps/new (or the manifest flow)
+# and point the webhook at https://<your-host>/webhooks/github.
+name: MergeAgent
+description: Resolves pull-request merge conflicts and opens a draft PR only when the fix passes regression verification.
+url: https://github.com/bheniavedant/ai-merge-conflict-resolver
+hook_attributes:
+  url: https://example.com/webhooks/github
+public: false
+default_events:
+  - pull_request
+  - issue_comment
+  - check_run
+default_permissions:
+  contents: write       # clone, push the resolution branch
+  pull_requests: write  # open draft PRs
+  issues: write         # comment, read linked issues
+  checks: write         # report a check run
+  metadata: read

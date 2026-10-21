@@ -1,0 +1,23 @@
+# Benchmark dataset: real merge commits whose parents genuinely conflict.
+# `mergeagent eval mine` re-merges the parents of each merge commit and keeps the ones that
+# produce supported text conflicts. The human merge commit is the reference resolution.
+# All five use pytest, so the regression pipeline can compare parent vs candidate test results.
+target_per_repo: 20
+max_hunks: 12
+max_candidates_per_repo: 4000
+repos:
+  - name: pallets/flask
+    url: https://github.com/pallets/flask.git
+    branch: main
+  - name: pallets/click
+    url: https://github.com/pallets/click.git
+    branch: main
+  - name: pallets/werkzeug
+    url: https://github.com/pallets/werkzeug.git
+    branch: main
+  - name: pallets/jinja
+    url: https://github.com/pallets/jinja.git
+    branch: main
+  - name: pytest-dev/pytest
+    url: https://github.com/pytest-dev/pytest.git
+    branch: main

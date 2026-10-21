@@ -1,0 +1,103 @@
+[project]
+name = "mergeagent"
+version = "0.1.0"
+description = "Multi-agent GitHub App that resolves merge conflicts and proves the fix with regression-verified tests."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Vedant Bhenia" }]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "pgvector>=0.3.6",
+    "redis>=5.2",
+    "arq>=0.26",
+    "langgraph>=0.2.60",
+    "mcp>=1.2",
+    "anthropic>=0.40",
+    "httpx>=0.28",
+    "pyjwt[crypto]>=2.10",
+    "docker>=7.1",
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+    "typer>=0.15",
+    "pyyaml>=6.0",
+    "tenacity>=9.0",
+]
+
+[project.scripts]
+mergeagent = "mergeagent.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "respx>=0.22",
+    "fakeredis[lua]>=2.26",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-pyyaml>=6.0",
+    "types-docker>=7.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mergeagent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "ASYNC", "S", "RUF", "PL", "PT"]
+ignore = [
+    "PLR0913",  # agent nodes legitimately take many collaborators
+    "PLR2004",  # magic values are fine in thresholds/tests
+    "S603",     # subprocess calls are intentional and use argv lists
+    "S607",     # git/docker resolved from PATH by design
+    "RUF012",
+    "E501",     # the formatter owns line length; `fmt: skip` tables are intentionally wide
+    "PLC0415",  # lazy imports keep optional backends (docker, uvicorn) off the import path
+    "PLR0911", "PLR0912", "PLR0915", "PLR0917",  # orchestration code is branchy by nature
+    "RUF046",   # redis-py returns Any; int() documents intent
+    "ASYNC240", # small local file reads; not worth a thread hop
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S108", "ASYNC240"]
+"migrations/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+packages = ["mergeagent"]
+
+[[tool.mypy.overrides]]
+module = ["arq.*", "pgvector.*", "langgraph.*", "docker.*", "fakeredis.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+    "integration: needs Postgres, Redis or Docker (run with `make test-integration`)",
+]
+addopts = "-m 'not integration' --strict-markers"
+
+[tool.coverage.run]
+source = ["mergeagent"]
+branch = true

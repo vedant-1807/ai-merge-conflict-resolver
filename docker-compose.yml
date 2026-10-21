@@ -1,0 +1,69 @@
+# Local stack: API + worker + PostgreSQL (pgvector) + Redis.
+#   cp .env.example .env && make sandbox-images && docker compose up -d --build
+name: mergeagent
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: mergeagent:local
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://mergeagent:mergeagent@postgres:5432/mergeagent
+    REDIS_URL: redis://redis:6379/0
+    SANDBOX__BACKEND: docker
+    SANDBOX__IMAGE: mergeagent-sandbox-python:latest
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  restart: unless-stopped
+
+services:
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    <<: *app
+    command: ["arq", "mergeagent.queue.worker.WorkerSettings"]
+    # The worker launches sibling sandbox containers. In production prefer a rootless Docker
+    # daemon or a remote sandbox host instead of mounting the host socket.
+    user: "0:0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - workspaces:/var/lib/mergeagent/workspaces
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: mergeagent
+      POSTGRES_PASSWORD: mergeagent
+      POSTGRES_DB: mergeagent
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mergeagent"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+volumes:
+  pgdata:
+  redisdata:
+  workspaces:
